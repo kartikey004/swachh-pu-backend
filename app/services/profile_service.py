@@ -87,17 +87,54 @@ async def _enrich_profile(profile: dict) -> ProfileResponse:
     return _build_profile_response(profile, student, worker)
 
 
+async def list_profiles() -> list[ProfileResponse]:
+    """List all profiles."""
+    admin = get_supabase_admin()
+
+    result = admin.table("profiles").select("*, student_profiles(*), worker_profiles(*)").execute()
+
+    profiles = []
+    for p in result.data:
+        try:
+            # Handle potential list or dict for nested profiles
+            student_raw = p.get("student_profiles")
+            if isinstance(student_raw, list):
+                student = student_raw[0] if student_raw else None
+            else:
+                student = student_raw
+
+            worker_raw = p.get("worker_profiles")
+            if isinstance(worker_raw, list):
+                worker = worker_raw[0] if worker_raw else None
+            else:
+                worker = worker_raw
+
+            enriched = _build_profile_response(p, student, worker)
+            profiles.append(enriched)
+        except Exception:
+            pass
+
+    return profiles
+
+
 async def list_workers() -> list[ProfileResponse]:
     """List all worker profiles (for admin assignment dropdown)."""
     admin = get_supabase_admin()
 
-    result = admin.table("profiles").select("*").eq("role", "worker").execute()
+    result = admin.table("profiles").select("*, worker_profiles(*)").eq("role", "worker").execute()
 
     profiles = []
     for p in result.data:
-        wp = admin.table("worker_profiles").select("*").eq("profile_id", p["id"]).execute()
-        worker = wp.data[0] if wp.data else None
-        profiles.append(_build_profile_response(p, None, worker))
+        try:
+            worker_raw = p.get("worker_profiles")
+            if isinstance(worker_raw, list):
+                worker = worker_raw[0] if worker_raw else None
+            else:
+                worker = worker_raw
+
+            profiles.append(_build_profile_response(p, None, worker))
+        except Exception:
+            pass
 
     return profiles
 

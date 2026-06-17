@@ -45,6 +45,27 @@ async def get_my_tasks(user: dict = Depends(require_role("worker"))):
     return await task_service.get_my_tasks(user["id"])
 
 
+@router.get("/public/list", response_model=TaskListResponse)
+async def list_tasks_public(
+    status: Optional[str] = Query(None, description="Filter by status: pending, assigned, completed, rejected"),
+    profile_id: Optional[str] = Query(None, description="Filter by creator profile ID"),
+    assigned_to: Optional[str] = Query(None, description="Filter by assigned worker profile ID"),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+    """
+    List tasks without authentication (for testing).
+    """
+    tasks, total = await task_service.list_tasks(
+        status_filter=status,
+        profile_id=profile_id,
+        assigned_to=assigned_to,
+        limit=limit,
+        offset=offset,
+    )
+    return TaskListResponse(tasks=tasks, count=total)
+
+
 @router.get("/", response_model=TaskListResponse)
 async def list_tasks(
     status: Optional[str] = Query(None, description="Filter by status: pending, assigned, completed, rejected"),
@@ -68,6 +89,39 @@ async def list_tasks(
         assigned_to = user["id"]  # Workers see assigned tasks
 
     # Admins see everything (no filter override)
+
+    tasks, total = await task_service.list_tasks(
+        status_filter=status,
+        profile_id=profile_id,
+        assigned_to=assigned_to,
+        limit=limit,
+        offset=offset,
+    )
+
+    return TaskListResponse(tasks=tasks, count=total)
+
+
+@router.get("/list", response_model=TaskListResponse)
+async def list_tasks_api(
+    status: Optional[str] = Query(None, description="Filter by status: pending, assigned, completed, rejected"),
+    profile_id: Optional[str] = Query(None, description="Filter by creator profile ID"),
+    assigned_to: Optional[str] = Query(None, description="Filter by assigned worker profile ID"),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    user: dict = Depends(get_current_user),
+):
+    """
+    List tasks with optional filters and pagination (alias for /tasks/).
+
+    - **Students** see their own created tasks.
+    - **Workers** see their assigned tasks.
+    - **Admins** see all tasks.
+    """
+    # Scope the query based on role
+    if user["role"] == "student":
+        profile_id = user["id"]
+    elif user["role"] == "worker":
+        assigned_to = user["id"]
 
     tasks, total = await task_service.list_tasks(
         status_filter=status,

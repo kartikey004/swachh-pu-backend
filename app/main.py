@@ -41,6 +41,7 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(profiles.router)
+app.include_router(profiles.workers_router)
 app.include_router(tasks.router)
 app.include_router(upload.router)
 
