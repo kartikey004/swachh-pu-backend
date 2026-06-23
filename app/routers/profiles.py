@@ -26,6 +26,24 @@ async def update_my_profile(
     return await profile_service.update_profile(user, data)
 
 
+@router.get("/public/list", response_model=ProfileListResponse)
+async def list_profiles_public():
+    """
+    List all profiles without authentication (for testing).
+    """
+    profiles = await profile_service.list_profiles()
+    return ProfileListResponse(profiles=profiles, count=len(profiles))
+
+
+@router.get("/public/workers", response_model=ProfileListResponse)
+async def list_workers_public():
+    """
+    List all worker profiles without authentication (for testing).
+    """
+    workers = await profile_service.list_workers()
+    return ProfileListResponse(profiles=workers, count=len(workers))
+
+
 @router.get("/workers", response_model=ProfileListResponse)
 async def list_workers(user: dict = Depends(require_role("admin"))):
     """
@@ -45,3 +63,41 @@ async def get_profile(profile_id: str, user: dict = Depends(require_role("admin"
     **Admin only**.
     """
     return await profile_service.get_profile_by_id(profile_id)
+
+
+@router.get("/list", response_model=ProfileListResponse)
+async def list_profiles_api(user: dict = Depends(get_current_user)):
+    """
+    List all profiles.
+
+    Accessible by any authenticated user.
+    """
+    profiles = await profile_service.list_profiles()
+    return ProfileListResponse(profiles=profiles, count=len(profiles))
+
+
+@router.get("/workers/list", response_model=ProfileListResponse)
+async def list_workers_authenticated(user: dict = Depends(get_current_user)):
+    """
+    List all worker profiles.
+
+    Accessible by any authenticated user.
+    """
+    workers = await profile_service.list_workers()
+    return ProfileListResponse(profiles=workers, count=len(workers))
+
+
+# Separate top-level router for /workers
+workers_router = APIRouter(prefix="/workers", tags=["Workers"])
+
+
+@workers_router.get("/list", response_model=ProfileListResponse)
+async def list_workers_top_level(user: dict = Depends(get_current_user)):
+    """
+    List all worker profiles.
+
+    Accessible by any authenticated user.
+    """
+    workers = await profile_service.list_workers()
+    return ProfileListResponse(profiles=workers, count=len(workers))
+
