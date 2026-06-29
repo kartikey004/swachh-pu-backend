@@ -15,8 +15,19 @@ class StudentProfileDetail(BaseModel):
     """Student-specific fields."""
 
     roll_no: str
+    id_card_image: Optional[str] = None
+    verification_status: Optional[str] = "pending"
     address: Optional[str] = None
     hostel: Optional[str] = None
+
+
+class FacultyProfileDetail(BaseModel):
+    """Faculty-specific fields."""
+
+    faculty_id: str
+    faculty_type: str
+    id_card_image: Optional[str] = None
+    verification_status: Optional[str] = "pending"
 
 
 class WorkerProfileDetail(BaseModel):
@@ -24,6 +35,8 @@ class WorkerProfileDetail(BaseModel):
 
     employee_id: Optional[str] = None
     zone: Optional[str] = None
+    id_card_image: Optional[str] = None
+    verification_status: Optional[str] = "pending"
 
 
 # ── Response Schemas ─────────────────────────────────────────
@@ -40,6 +53,7 @@ class ProfileResponse(BaseModel):
 
     # Populated based on role
     student_detail: Optional[StudentProfileDetail] = None
+    faculty_detail: Optional[FacultyProfileDetail] = None
     worker_detail: Optional[WorkerProfileDetail] = None
 
 
