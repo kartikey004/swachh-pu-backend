@@ -50,9 +50,44 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
     )
 
 
+async def check_user_verification(user: dict) -> str:
+    """Helper to check verification_status for user's role profile."""
+    role = user.get("role")
+    if role == "admin":
+        return "verified"
+
+    admin_client = get_supabase_admin()
+    if role == "student":
+        sp_res = admin_client.table("student_profiles").select("verification_status").eq("user_id", user["id"]).execute()
+        if sp_res.data:
+            return sp_res.data[0].get("verification_status", "pending")
+    elif role == "faculty":
+        fp_res = admin_client.table("faculty_profiles").select("verification_status").eq("user_id", user["id"]).execute()
+        if fp_res.data:
+            return fp_res.data[0].get("verification_status", "pending")
+    elif role == "worker":
+        wp_res = admin_client.table("worker_profiles").select("verification_status").eq("user_id", user["id"]).execute()
+        if wp_res.data:
+            return wp_res.data[0].get("verification_status", "pending")
+    return "verified"
+
+
+async def require_verified_user(user: dict = Depends(get_current_user)):
+    """
+    Dependency ensuring current user is verified by admin.
+    """
+    status_str = await check_user_verification(user)
+    if status_str != "verified":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your identity card verification is pending or rejected by admin.",
+        )
+    return user
+
+
 def require_role(*allowed_roles: str):
     """
-    Dependency checking if current user has one of allowed roles.
+    Dependency checking if current user has one of allowed roles and is verified.
     """
     async def _check_role(user: dict = Depends(get_current_user)):
         if user["role"] not in allowed_roles:
@@ -60,6 +95,13 @@ def require_role(*allowed_roles: str):
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"This action requires one of the following roles: {', '.join(allowed_roles)}",
             )
+        status_str = await check_user_verification(user)
+        if status_str != "verified":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Your identity card verification is pending or rejected by admin.",
+            )
         return user
 
     return _check_role
+

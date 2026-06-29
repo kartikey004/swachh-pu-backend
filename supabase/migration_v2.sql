@@ -55,26 +55,38 @@ CREATE INDEX idx_email_otps_user_id ON email_otps(user_id);
 
 -- 4. STUDENT PROFILES TABLE
 CREATE TABLE student_profiles (
-    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id    UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
-    roll_no    VARCHAR(50) NOT NULL UNIQUE,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id             UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    roll_no             VARCHAR(50) NOT NULL UNIQUE,
+    id_card_image       TEXT NOT NULL,
+    verification_status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (verification_status IN ('pending', 'verified', 'rejected')),
+    verified_by         UUID REFERENCES users(id) ON DELETE SET NULL,
+    verified_at         TIMESTAMPTZ,
+    rejection_reason    TEXT,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX idx_student_profiles_user_id ON student_profiles(user_id);
+CREATE INDEX idx_student_profiles_verification_status ON student_profiles(verification_status);
 
 -- 5. FACULTY PROFILES TABLE
 CREATE TABLE faculty_profiles (
-    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id      UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
-    faculty_id   VARCHAR(50) NOT NULL UNIQUE,
-    faculty_type VARCHAR(20) NOT NULL CHECK (faculty_type IN ('teaching', 'non_teaching')),
-    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id             UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    faculty_id          VARCHAR(50) NOT NULL UNIQUE,
+    faculty_type        VARCHAR(20) NOT NULL CHECK (faculty_type IN ('teaching', 'non_teaching')),
+    id_card_image       TEXT NOT NULL,
+    verification_status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (verification_status IN ('pending', 'verified', 'rejected')),
+    verified_by         UUID REFERENCES users(id) ON DELETE SET NULL,
+    verified_at         TIMESTAMPTZ,
+    rejection_reason    TEXT,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE INDEX idx_faculty_profiles_user_id ON faculty_profiles(user_id);
+CREATE INDEX idx_faculty_profiles_verification_status ON faculty_profiles(verification_status);
 
 -- 6. WORKER PROFILES TABLE
 CREATE TABLE worker_profiles (

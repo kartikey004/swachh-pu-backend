@@ -10,28 +10,42 @@ from fastapi import HTTPException, status
 from app.models.profile import (
     ProfileResponse,
     StudentProfileDetail,
+    FacultyProfileDetail,
     WorkerProfileDetail,
     UpdateProfileRequest,
 )
 from app.utils.supabase_client import get_supabase_admin
 
 
-def _build_profile_response(profile: dict, student: Optional[dict], worker: Optional[dict]) -> ProfileResponse:
+def _build_profile_response(profile: dict, student: Optional[dict], faculty: Optional[dict], worker: Optional[dict]) -> ProfileResponse:
     """Helper to assemble a ProfileResponse from raw DB rows."""
     student_detail = None
+    faculty_detail = None
     worker_detail = None
 
     if student:
         student_detail = StudentProfileDetail(
             roll_no=student["roll_no"],
+            id_card_image=student.get("id_card_image"),
+            verification_status=student.get("verification_status", "pending"),
             address=student.get("address"),
             hostel=student.get("hostel"),
+        )
+
+    if faculty:
+        faculty_detail = FacultyProfileDetail(
+            faculty_id=faculty["faculty_id"],
+            faculty_type=faculty["faculty_type"],
+            id_card_image=faculty.get("id_card_image"),
+            verification_status=faculty.get("verification_status", "pending"),
         )
 
     if worker:
         worker_detail = WorkerProfileDetail(
             employee_id=worker.get("employee_id"),
             zone=worker.get("zone"),
+            id_card_image=worker.get("id_card_image"),
+            verification_status=worker.get("verification_status", "pending"),
         )
 
     return ProfileResponse(
@@ -42,6 +56,7 @@ def _build_profile_response(profile: dict, student: Optional[dict], worker: Opti
         phone=profile.get("phone"),
         created_at=profile["created_at"],
         student_detail=student_detail,
+        faculty_detail=faculty_detail,
         worker_detail=worker_detail,
     )
 
@@ -74,42 +89,43 @@ async def _enrich_profile(profile: dict) -> ProfileResponse:
     """Fetch role-specific data and build full response."""
     admin = get_supabase_admin()
     student = None
+    faculty = None
     worker = None
 
     if profile["role"] == "student":
-        sp = admin.table("student_profiles").select("*").eq("profile_id", profile["id"]).execute()
+        sp = admin.table("student_profiles").select("*").eq("user_id", profile["user_id"]).execute()
         student = sp.data[0] if sp.data else None
 
+    elif profile["role"] == "faculty":
+        fp = admin.table("faculty_profiles").select("*").eq("user_id", profile["user_id"]).execute()
+        faculty = fp.data[0] if fp.data else None
+
     elif profile["role"] == "worker":
-        wp = admin.table("worker_profiles").select("*").eq("profile_id", profile["id"]).execute()
+        wp = admin.table("worker_profiles").select("*").eq("user_id", profile["user_id"]).execute()
         worker = wp.data[0] if wp.data else None
 
-    return _build_profile_response(profile, student, worker)
+    return _build_profile_response(profile, student, faculty, worker)
 
 
 async def list_profiles() -> list[ProfileResponse]:
     """List all profiles."""
     admin = get_supabase_admin()
 
-    result = admin.table("profiles").select("*, student_profiles(*), worker_profiles(*)").execute()
+    result = admin.table("profiles").select("*, student_profiles(*), faculty_profiles(*), worker_profiles(*)").execute()
 
     profiles = []
     for p in result.data:
         try:
-            # Handle potential list or dict for nested profiles
             student_raw = p.get("student_profiles")
-            if isinstance(student_raw, list):
-                student = student_raw[0] if student_raw else None
-            else:
-                student = student_raw
+            student = student_raw[0] if isinstance(student_raw, list) and student_raw else (student_raw if isinstance(student_raw, dict) else None)
+
+            faculty_raw = p.get("faculty_profiles")
+            faculty = faculty_raw[0] if isinstance(faculty_raw, list) and faculty_raw else (faculty_raw if isinstance(faculty_raw, dict) else None)
 
             worker_raw = p.get("worker_profiles")
-            if isinstance(worker_raw, list):
-                worker = worker_raw[0] if worker_raw else None
-            else:
-                worker = worker_raw
+            worker = worker_raw[0] if isinstance(worker_raw, list) and worker_raw else (worker_raw if isinstance(worker_raw, dict) else None)
 
-            enriched = _build_profile_response(p, student, worker)
+            enriched = _build_profile_response(p, student, faculty, worker)
             profiles.append(enriched)
         except Exception:
             pass

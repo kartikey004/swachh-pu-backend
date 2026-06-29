@@ -38,6 +38,7 @@ class StudentSignUpRequest(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=6)
     roll_no: str = Field(..., min_length=1)
+    id_card_image: str = Field(..., min_length=1, description="URL or path to uploaded ID card photo")
 
     @field_validator("email", mode="before")
     @classmethod
@@ -57,6 +58,7 @@ class FacultySignUpRequest(BaseModel):
     password: str = Field(..., min_length=6)
     faculty_id: str = Field(..., min_length=1)
     faculty_type: Literal["teaching", "non_teaching"]
+    id_card_image: str = Field(..., min_length=1, description="URL or path to uploaded ID card photo")
 
     @field_validator("email", mode="before")
     @classmethod
@@ -107,10 +109,14 @@ class LoginRequest(BaseModel):
     password: str
 
 
-class AdminWorkerDecisionRequest(BaseModel):
-    """Body for POST /admin/workers/{worker_profile_id}/verify."""
+class AdminUserDecisionRequest(BaseModel):
+    """Body for POST /admin/users/{profile_id}/verify."""
     action: Literal["approve", "reject"]
     rejection_reason: Optional[str] = None
+
+
+# Backward compatibility alias
+AdminWorkerDecisionRequest = AdminUserDecisionRequest
 
 
 # ── Response Schemas ─────────────────────────────────────────
@@ -144,15 +150,19 @@ class AuthResponse(BaseModel):
     otp_debug: Optional[str] = None  # Returned for testing/dev environment convenience
 
 
-class PendingWorkerResponse(BaseModel):
-    """Worker profile application pending admin review."""
-    worker_profile_id: UUID
+class PendingUserResponse(BaseModel):
+    """User profile application pending admin review."""
+    profile_id: UUID
     user_id: UUID
     name: str
     email: str
-    worker_id: str
-    department: str
-    designation: str
+    role: str
     id_card_image: str
     verification_status: str
     created_at: datetime
+    details: Optional[dict] = None
+
+
+# Backward compatibility alias
+PendingWorkerResponse = PendingUserResponse
+

@@ -121,6 +121,8 @@ async def signup_student(data: StudentSignUpRequest) -> AuthResponse:
     admin.table("student_profiles").insert({
         "user_id": user["id"],
         "roll_no": data.roll_no,
+        "id_card_image": data.id_card_image,
+        "verification_status": "pending",
     }).execute()
 
     # Generate OTP
@@ -133,8 +135,9 @@ async def signup_student(data: StudentSignUpRequest) -> AuthResponse:
             name=user["name"],
             role=user["role"],
             is_email_verified=False,
+            verification_status="pending",
         ),
-        message="Student registered successfully. Please verify your OTP sent to email.",
+        message="Student registered successfully. Please verify your OTP sent to email and await ID verification.",
         otp_debug=otp_code,
     )
 
@@ -179,6 +182,8 @@ async def signup_faculty(data: FacultySignUpRequest) -> AuthResponse:
         "user_id": user["id"],
         "faculty_id": data.faculty_id,
         "faculty_type": data.faculty_type,
+        "id_card_image": data.id_card_image,
+        "verification_status": "pending",
     }).execute()
 
     # Generate OTP
@@ -191,8 +196,9 @@ async def signup_faculty(data: FacultySignUpRequest) -> AuthResponse:
             name=user["name"],
             role=user["role"],
             is_email_verified=False,
+            verification_status="pending",
         ),
-        message="Faculty registered successfully. Please verify your OTP sent to email.",
+        message="Faculty registered successfully. Please verify your OTP sent to email and await ID verification.",
         otp_debug=otp_code,
     )
 
@@ -255,7 +261,7 @@ async def signup_worker(data: WorkerSignUpRequest) -> AuthResponse:
 # ── Login & Rule Enforcement ─────────────────────────────────
 
 async def login_user(data: LoginRequest) -> AuthResponse:
-    """Login with strict verification checks according to login rules."""
+    """Login with email + password verification."""
     admin = get_supabase_admin()
 
     # Query user
@@ -274,41 +280,28 @@ async def login_user(data: LoginRequest) -> AuthResponse:
             detail="Invalid email or password.",
         )
 
-    # ── Rule 1: Student / Faculty / Worker must have is_email_verified == True ──
+    # ── Rule 1: Email must be verified ──
     if not user["is_email_verified"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Email is not verified. Please verify your OTP first.",
         )
 
-    # ── Rule 2: Worker must also be verified by Admin ──
-    verification_status = None
-    if user["role"] == "worker":
-        wp_res = admin.table("worker_profiles").select("*").eq("user_id", user["id"]).execute()
-        if not wp_res.data:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Worker profile record missing.",
-            )
-        wp = wp_res.data[0]
-        verification_status = wp["verification_status"]
-
-        if verification_status == "pending":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Your account is under verification. Please wait for admin approval.",
-            )
-        elif verification_status == "rejected":
-            reason = wp.get("rejection_reason") or "ID card verification failed."
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Worker registration rejected by admin. Reason: {reason}",
-            )
-        elif verification_status != "verified":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access allowed only for verified workers.",
-            )
+    # ── Rule 2: Fetch verification_status for role profile ──
+    verification_status = "verified"
+    role = user["role"]
+    if role == "student":
+        sp_res = admin.table("student_profiles").select("verification_status").eq("user_id", user["id"]).execute()
+        if sp_res.data:
+            verification_status = sp_res.data[0].get("verification_status", "pending")
+    elif role == "faculty":
+        fp_res = admin.table("faculty_profiles").select("verification_status").eq("user_id", user["id"]).execute()
+        if fp_res.data:
+            verification_status = fp_res.data[0].get("verification_status", "pending")
+    elif role == "worker":
+        wp_res = admin.table("worker_profiles").select("verification_status").eq("user_id", user["id"]).execute()
+        if wp_res.data:
+            verification_status = wp_res.data[0].get("verification_status", "pending")
 
     access_token, refresh_token = generate_tokens(user["id"], user["role"])
 

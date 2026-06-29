@@ -1,79 +1,121 @@
 """
-Admin Service — Handles worker application verification workflows.
+Admin Service — Handles application verification workflows for students, faculty, and workers.
 """
 
 from datetime import datetime, timezone
 from typing import List
 from fastapi import HTTPException, status
-from app.models.auth import PendingWorkerResponse
+from app.models.auth import PendingUserResponse
 from app.utils.supabase_client import get_supabase_admin
 
 
-async def get_pending_workers() -> List[PendingWorkerResponse]:
-    """Fetch all worker registration requests pending admin verification."""
+async def get_pending_users() -> List[PendingUserResponse]:
+    """Fetch all registration requests pending admin verification across students, faculty, and workers."""
     admin = get_supabase_admin()
+    results = []
 
-    try:
-        res = (
-            admin.table("worker_profiles")
-            .select("*, users!inner(id, name, email), master_workers!inner(worker_id, department, designation)")
-            .eq("verification_status", "pending")
-            .execute()
-        )
-    except Exception:
-        # Fallback query if deep joins need separate fetching
-        res = admin.table("worker_profiles").select("*").eq("verification_status", "pending").execute()
-        results = []
-        for wp in res.data:
-            u = admin.table("users").select("*").eq("id", wp["user_id"]).execute().data[0]
-            mw = admin.table("master_workers").select("*").eq("id", wp["master_worker_id"]).execute().data[0]
-            results.append(PendingWorkerResponse(
-                worker_profile_id=wp["id"],
+    # 1. Fetch pending student profiles
+    sp_res = admin.table("student_profiles").select("*").eq("verification_status", "pending").execute()
+    for sp in sp_res.data:
+        u_res = admin.table("users").select("*").eq("id", sp["user_id"]).execute()
+        if u_res.data:
+            u = u_res.data[0]
+            results.append(PendingUserResponse(
+                profile_id=sp["id"],
+                user_id=sp["user_id"],
+                name=u["name"],
+                email=u["email"],
+                role="student",
+                id_card_image=sp.get("id_card_image", ""),
+                verification_status=sp["verification_status"],
+                created_at=sp["created_at"],
+                details={"roll_no": sp.get("roll_no")},
+            ))
+
+    # 2. Fetch pending faculty profiles
+    fp_res = admin.table("faculty_profiles").select("*").eq("verification_status", "pending").execute()
+    for fp in fp_res.data:
+        u_res = admin.table("users").select("*").eq("id", fp["user_id"]).execute()
+        if u_res.data:
+            u = u_res.data[0]
+            results.append(PendingUserResponse(
+                profile_id=fp["id"],
+                user_id=fp["user_id"],
+                name=u["name"],
+                email=u["email"],
+                role="faculty",
+                id_card_image=fp.get("id_card_image", ""),
+                verification_status=fp["verification_status"],
+                created_at=fp["created_at"],
+                details={"faculty_id": fp.get("faculty_id"), "faculty_type": fp.get("faculty_type")},
+            ))
+
+    # 3. Fetch pending worker profiles
+    wp_res = admin.table("worker_profiles").select("*").eq("verification_status", "pending").execute()
+    for wp in wp_res.data:
+        u_res = admin.table("users").select("*").eq("id", wp["user_id"]).execute()
+        mw_res = admin.table("master_workers").select("*").eq("id", wp["master_worker_id"]).execute()
+        if u_res.data and mw_res.data:
+            u = u_res.data[0]
+            mw = mw_res.data[0]
+            results.append(PendingUserResponse(
+                profile_id=wp["id"],
                 user_id=wp["user_id"],
                 name=u["name"],
                 email=u["email"],
-                worker_id=mw["worker_id"],
-                department=mw["department"],
-                designation=mw["designation"],
-                id_card_image=wp["id_card_image"],
+                role="worker",
+                id_card_image=wp.get("id_card_image", ""),
                 verification_status=wp["verification_status"],
                 created_at=wp["created_at"],
+                details={
+                    "worker_id": mw.get("worker_id"),
+                    "department": mw.get("department"),
+                    "designation": mw.get("designation"),
+                },
             ))
-        return results
 
-    results = []
-    for item in res.data:
-        u = item["users"]
-        mw = item["master_workers"]
-        results.append(PendingWorkerResponse(
-            worker_profile_id=item["id"],
-            user_id=item["user_id"],
-            name=u["name"],
-            email=u["email"],
-            worker_id=mw["worker_id"],
-            department=mw["department"],
-            designation=mw["designation"],
-            id_card_image=item["id_card_image"],
-            verification_status=item["verification_status"],
-            created_at=item["created_at"],
-        ))
     return results
 
 
-async def decide_worker_verification(
-    worker_profile_id: str,
+async def get_pending_workers() -> List[PendingUserResponse]:
+    """Backward compatibility wrapper."""
+    return await get_pending_users()
+
+
+async def decide_user_verification(
+    profile_id: str,
     action: str,
     admin_user_id: str,
     rejection_reason: str = None
 ) -> dict:
-    """Approve or reject a worker application."""
+    """Approve or reject a user application (student, faculty, or worker)."""
     admin = get_supabase_admin()
 
-    wp_res = admin.table("worker_profiles").select("*").eq("id", worker_profile_id).execute()
-    if not wp_res.data:
+    target_table = None
+    profile = None
+
+    # Check worker_profiles first
+    res = admin.table("worker_profiles").select("*").eq("id", profile_id).execute()
+    if res.data:
+        target_table = "worker_profiles"
+        profile = res.data[0]
+    else:
+        # Check student_profiles
+        res = admin.table("student_profiles").select("*").eq("id", profile_id).execute()
+        if res.data:
+            target_table = "student_profiles"
+            profile = res.data[0]
+        else:
+            # Check faculty_profiles
+            res = admin.table("faculty_profiles").select("*").eq("id", profile_id).execute()
+            if res.data:
+                target_table = "faculty_profiles"
+                profile = res.data[0]
+
+    if not profile or not target_table:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Worker profile request not found.",
+            detail="User verification request profile not found.",
         )
 
     now_iso = datetime.now(timezone.utc).isoformat()
@@ -83,7 +125,7 @@ async def decide_worker_verification(
             "verified_by": admin_user_id,
             "verified_at": now_iso,
         }
-        message = "Worker account has been approved and verified."
+        message = "User account has been approved and verified."
     elif action == "reject":
         update_data = {
             "verification_status": "rejected",
@@ -91,13 +133,29 @@ async def decide_worker_verification(
             "verified_at": now_iso,
             "rejection_reason": rejection_reason or "ID card verification failed.",
         }
-        message = f"Worker account rejected: {update_data['rejection_reason']}"
+        message = f"User account rejected: {update_data['rejection_reason']}"
     else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid action. Must be 'approve' or 'reject'.",
         )
 
-    admin.table("worker_profiles").update(update_data).eq("id", worker_profile_id).execute()
+    admin.table(target_table).update(update_data).eq("id", profile_id).execute()
 
     return {"status": "success", "message": message}
+
+
+async def decide_worker_verification(
+    worker_profile_id: str,
+    action: str,
+    admin_user_id: str,
+    rejection_reason: str = None
+) -> dict:
+    """Backward compatibility wrapper."""
+    return await decide_user_verification(
+        profile_id=worker_profile_id,
+        action=action,
+        admin_user_id=admin_user_id,
+        rejection_reason=rejection_reason,
+    )
+
