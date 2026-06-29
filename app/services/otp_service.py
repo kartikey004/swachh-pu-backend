@@ -3,14 +3,43 @@ OTP Service — Handles generation, storage, sending, and verification of 6-digi
 """
 
 import random
+import smtplib
+from email.mime.text import MIMEText
 from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException, status
 from app.utils.supabase_client import get_supabase_admin
+from app.config import get_settings
 
 MASTER_TEST_OTP = "123456"  # Static master OTP for testing convenience
 
 
-async def generate_and_save_otp(user_id: str) -> str:
+def send_otp_email(recipient_email: str, otp_code: str):
+    """Send OTP code via SMTP if configured."""
+    settings = get_settings()
+    if not settings.smtp_user or not settings.smtp_password:
+        print("[OTP SERVICE] SMTP user/password not configured in environment. Skipping actual email sending.")
+        return
+
+    msg = MIMEText(
+        f"Hello,\n\nYour Swachh PU email verification OTP code is: {otp_code}\n\n"
+        f"This code will expire in 15 minutes.\n\n"
+        f"If you did not request this code, please ignore this email."
+    )
+    msg["Subject"] = "Swachh PU - Your Verification OTP Code"
+    msg["From"] = settings.emails_from or settings.smtp_user
+    msg["To"] = recipient_email
+
+    try:
+        with smtplib.SMTP(settings.smtp_server, settings.smtp_port) as server:
+            server.starttls()
+            server.login(settings.smtp_user, settings.smtp_password)
+            server.sendmail(settings.emails_from or settings.smtp_user, [recipient_email], msg.as_string())
+        print(f"[OTP SERVICE] Email successfully dispatched to {recipient_email}")
+    except Exception as e:
+        print(f"[OTP SERVICE] Failed to send email via SMTP: {str(e)}")
+
+
+async def generate_and_save_otp(user_id: str, email: str = None) -> str:
     """
     Generate a 6-digit numeric OTP, save to `email_otps` table with 15-min expiration.
     Returns the generated OTP string.
@@ -32,8 +61,17 @@ async def generate_and_save_otp(user_id: str) -> str:
             detail=f"Failed to store OTP: {str(exc)}",
         )
 
+    recipient_email = email
+    if not recipient_email:
+        user_res = admin.table("users").select("email").eq("id", user_id).execute()
+        if user_res.data:
+            recipient_email = user_res.data[0].get("email")
+
+    if recipient_email:
+        send_otp_email(recipient_email, otp_code)
+
     print(f"==========================================")
-    print(f"[OTP SERVICE] Sent OTP {otp_code} to user_id {user_id} (Master Test OTP: {MASTER_TEST_OTP})")
+    print(f"[OTP SERVICE] Sent OTP {otp_code} to user_id {user_id} ({recipient_email})")
     print(f"==========================================")
     return otp_code
 
@@ -52,7 +90,7 @@ async def resend_email_otp(email: str) -> dict:
         )
     user = user_res.data[0]
 
-    otp_code = await generate_and_save_otp(user["id"])
+    otp_code = await generate_and_save_otp(user["id"], user["email"])
     return {
         "status": "success",
         "message": f"Fresh OTP generated and sent to {email}.",

@@ -124,7 +124,7 @@ async def signup_student(data: StudentSignUpRequest) -> AuthResponse:
     }).execute()
 
     # Generate OTP
-    otp_code = await generate_and_save_otp(user["id"])
+    otp_code = await generate_and_save_otp(user["id"], data.email)
 
     return AuthResponse(
         user=AuthUser(
@@ -182,7 +182,7 @@ async def signup_faculty(data: FacultySignUpRequest) -> AuthResponse:
     }).execute()
 
     # Generate OTP
-    otp_code = await generate_and_save_otp(user["id"])
+    otp_code = await generate_and_save_otp(user["id"], data.email)
 
     return AuthResponse(
         user=AuthUser(
@@ -236,7 +236,7 @@ async def signup_worker(data: WorkerSignUpRequest) -> AuthResponse:
     }).execute()
 
     # Generate OTP
-    otp_code = await generate_and_save_otp(user["id"])
+    otp_code = await generate_and_save_otp(user["id"], data.email)
 
     return AuthResponse(
         user=AuthUser(
